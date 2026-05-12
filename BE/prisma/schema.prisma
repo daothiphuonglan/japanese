@@ -7,9 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model hiragana {
+model kana {
   id     String @id @default(uuid())
   char   String
   romaji String @unique
   type   String
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  password  String
+  name      String?
+  createdAt DateTime  @default(now())
+  messages  Message[] // Một User có thể có nhiều Message
+}
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  content   String
+  createdAt DateTime @default(now())
+  
+  // Thiết lập mối quan hệ
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id]) 
 }

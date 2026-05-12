@@ -1,5 +1,9 @@
 // app/layout.tsx
 import "./globals.css";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata = {
   title: "Học bảng chữ cái tiếng Nhật (Hiragana, Katakana)",
@@ -13,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi">
+    <html lang="vi" className={cn("font-sans", geist.variable)}>
       <body className="bg-gray-50 text-gray-900">
         {children}
       </body>

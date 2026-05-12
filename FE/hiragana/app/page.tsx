@@ -1,9 +1,9 @@
 // app/page.tsx
-import Navbar from "@/components/layout/Navbar";
-import Hero from "@/components/home/Hero";
-import KanaSection from "@/components/home/KanaSection";
-import TrustedLogos from "@/components/home/TrustedLogos";
-import SeoContent from "@/components/home/SeoContent";
+import Navbar from "@/layout/Navbar";
+import Hero from "@/home/Hero";
+import KanaSection from "@/home/KanaSection";
+import TrustedLogos from "@/home/TrustedLogos";
+import SeoContent from "@/home/SeoContent";
 
 export default function Home() {
   return (
