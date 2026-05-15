@@ -1,8 +1,23 @@
 import { PrismaClient } from '@prisma/client';
-
+import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
+
+
 async function main() {
+  const hashedPassword = await bcrypt.hash('123456', 10);
+
+
+  await prisma.user.upsert({
+    where: { email: 'admin@gmail.com' },
+    update: {},
+    create: {
+      email: 'admin@gmail.com',
+      name: 'Tech Lead',
+      password: hashedPassword,
+    },
+  });
+  
   await prisma.kana.createMany({
   data: [
     // a-row

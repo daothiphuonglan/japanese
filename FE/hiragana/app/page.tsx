@@ -1,18 +1,28 @@
 // app/page.tsx
-import Navbar from "@/components/layout/Navbar";
-import Hero from "@/components/home/Hero";
-import KanaSection from "@/components/home/KanaSection";
-import TrustedLogos from "@/components/home/TrustedLogos";
-import SeoContent from "@/components/home/SeoContent";
+import Navbar from "@/layout/Navbar";
+import Hero from "@/home/Hero";
+import KanaSection from "@/home/KanaSection";
+import TrustedLogos from "@/home/TrustedLogos";
+import SeoContent from "@/home/SeoContent";
+import ChatWidget from "@/components/Chat/ChatWidget"; // Import Widget thay vì ChatBox
 
 export default function Home() {
   return (
-    <>
+    <div className="relative min-h-screen">
       <Navbar />
-      <Hero />
-      <KanaSection />
-      <TrustedLogos />
-      <SeoContent />
-    </>
+      
+      <main>
+        <Hero />
+        <KanaSection />
+        <TrustedLogos />
+        <SeoContent />
+      </main>
+
+      {/* Không cần truyền gì cả! 
+        ChatWidget bên trong nó sẽ tự gọi <ChatBox currentUser={user} /> 
+        khi nó tìm thấy user trong localStorage.
+      */}
+      <ChatWidget />
+    </div>
   );
 }
