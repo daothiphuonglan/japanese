@@ -1,8 +1,13 @@
 // components/layout/Navbar.tsx
+'use client';
 import { BookOpen } from "lucide-react";
 import Container from "./Container";
+import { useState } from 'react';
+import ChatBox from '@/components/Chat/ChatBox';
 
 export default function Navbar() {
+  const [isOpenChat, setIsOpenChat] = useState(false);
+  const currentUser = { id: 1, name: 'Tên của bạn' };
   return (
     <div className="border-b bg-white">
       <Container>
@@ -22,6 +27,25 @@ export default function Navbar() {
           </button>
         </div>
       </Container>
+
+      <div>
+        {/* Nút bấm hiển thị Chat ở góc màn hình */}
+        <div className="fixed bottom-5 right-5 z-50">
+          <button
+            onClick={() => setIsOpenChat(!isOpenChat)}
+            className="bg-blue-600 p-4 rounded-full shadow-lg text-white"
+          >
+            {isOpenChat ? '✖' : '💬'}
+          </button>
+
+          {/* Hiển thị màn hình chat khi bấm vào */}
+          {isOpenChat && (
+            <div className="absolute bottom-16 right-0 w-[350px]">
+              <ChatBox currentUser={currentUser} />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
+import { SocketProvider } from '@/context/SocketContext';
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -19,7 +20,9 @@ export default function RootLayout({
   return (
     <html lang="vi" className={cn("font-sans", geist.variable)}>
       <body className="bg-gray-50 text-gray-900">
-        {children}
+        <SocketProvider>
+          {children}
+        </SocketProvider>
       </body>
     </html>
   );
