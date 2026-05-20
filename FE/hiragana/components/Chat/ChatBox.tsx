@@ -14,7 +14,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   useEffect(() => {
     const loadHistory = async () => {
       const res = await api.get('/chat/messages');
-      setMessages(res.data.reverse()); // Đảo lại để tin mới nhất ở dưới
+      setMessages(res.data); // Đảo lại để tin mới nhất ở dưới
     };
     loadHistory();
   }, []);
@@ -51,14 +51,23 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex flex-col ${msg.user?.id === currentUser.id ? 'items-end' : 'items-start'}`}>
-            <span className="text-xs text-gray-500">{msg.user?.name || 'User'}</span>
-            <div className={`px-3 py-2 rounded-lg ${msg.user?.id === currentUser.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-black'}`}>
-              {msg.content}
-            </div>
-          </div>
-        ))}
+       {messages.map((msg, i) => {
+  // 1. Tách điều kiện ra thành một biến Boolean rõ ràng
+  const isMyMessage = msg.user?.id === currentUser.id || msg.userId === currentUser.id;
+
+  return (
+    <div key={i} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
+      <span className="text-xs text-gray-500">
+        {msg.user?.name || 'User'}
+      </span>
+      
+      {/* 2. Áp dụng biến đó vào phần đổi màu nền cực kỳ gọn gàng */}
+      <div className={`px-3 py-2 rounded-lg ${isMyMessage ? 'bg-blue-500 text-white' : 'bg-gray-200 text-black'}`}>
+        {msg.content}
+      </div>
+    </div>
+  );
+})}
         <div ref={scrollRef} />
       </div>
 

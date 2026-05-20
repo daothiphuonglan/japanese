@@ -12,7 +12,9 @@ import { PrismaService } from '../../database/prisma.service'; // Đường dẫ
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // Trong thực tế nên để domain của frontend ví dụ: 'http://localhost:3000'
+    origin: 'http://localhost:3001', 
+    credentials: true,
+    // Trong thực tế nên để domain của frontend ví dụ: 'http://localhost:3000'
   },
 })
 export class ChatGateway
