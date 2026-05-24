@@ -17,7 +17,7 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(res.data.user));
 
       alert('Đăng nhập thành công!');
-      router.push('/'); // Về trang chủ để kích hoạt Socket
+      router.push('/chat'); // Về trang chủ để kích hoạt Socket
     } catch (err) {
       alert('Sai thông tin đăng nhập!');
     }

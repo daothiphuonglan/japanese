@@ -31,4 +31,5 @@ model Message {
   // Thiết lập mối quan hệ
   userId    Int
   user      User     @relation(fields: [userId], references: [id]) 
+  receiverId Int?
 }
