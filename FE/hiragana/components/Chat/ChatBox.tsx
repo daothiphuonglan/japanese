@@ -10,22 +10,30 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   
-  // State lưu người mà bạn đang bấm chọn để chat cùng (ví dụ bấm chọn Member)
+  // State lưu người mà bạn đang bấm chọn để chat cùng
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // 🌟 CHIÊU ĐỘC: Dùng useRef khóa chặt thông tin user, chống bẫy "Changed size between renders"
   const userRef = useRef(currentUser);
 
   useEffect(() => {
-    userRef.current = currentUser;
+    if (currentUser) {
+      userRef.current = currentUser;
+    }
   }, [currentUser]);
 
   // 1. Báo danh với Server là tôi Online + Lắng nghe danh sách Online
   useEffect(() => {
+    // Nếu chưa có socket hoặc currentUser chưa load xong từ context thì đứng đợi
     if (!socket || !currentUser) return;
 
-    // Báo danh
-    socket.emit('user_online', { userId: currentUser.id, name: currentUser.name });
+    // Báo danh với Backend
+    socket.emit('user_online', { 
+      userId: Number(currentUser.id), 
+      name: currentUser.name 
+    });
 
     // Lắng nghe danh sách Online từ BE đổ về
     socket.on('get_online_users', (users: any[]) => {
@@ -43,9 +51,9 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
       socket.off('get_online_users');
       socket.off('receive_private_message');
     };
-  }, [socket, currentUser]);
+  }, [socket, currentUser]); // Theo dõi trực tiếp để cập nhật ngay khi đăng nhập xong
 
-  // 2. Load lịch sử chat (Chỉnh sửa để sau này gọi API lọc theo phòng chat)
+  // 2. Load lịch sử chat
   useEffect(() => {
     const loadHistory = async () => {
       try {
@@ -69,21 +77,20 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
 
     socket.emit('send_private_message', {
       senderId: Number(currentUser.id),
-      receiverId: Number(selectedUser.userId), // Gửi tới ID người được chọn
+      receiverId: Number(selectedUser.userId), 
       content: input,
     });
     setInput('');
   };
 
-  // 5. Lọc tin nhắn: Chỉ hiển thị tin nhắn giữa (currentUser và selectedUser)
+  // 5. Lọc tin nhắn chat 1-1
   const displayMessages = messages.filter(msg => {
-    if (!selectedUser) return false;
+    if (!selectedUser || !currentUser) return false;
     const msgSenderId = Number(msg.userId || msg.senderId);
     const msgReceiverId = Number(msg.receiverId);
-    const myId = Number(currentUser?.id);
+    const myId = Number(currentUser.id);
     const targetId = Number(selectedUser.userId);
 
-    // Điều kiện: (Tôi gửi -> Họ nhận) HOẶC (Họ gửi -> Tôi nhận)
     return (msgSenderId === myId && msgReceiverId === targetId) || 
            (msgSenderId === targetId && msgReceiverId === myId);
   });
@@ -125,7 +132,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
       <div className="w-2/3 flex flex-col bg-white">
         {selectedUser ? (
           <>
-            {/* Header người đang chat cùng */}
             <div className="p-3 border-b flex justify-between bg-gray-50 items-center">
               <span className="font-bold text-gray-800">Đang chat với: <span className="text-blue-600">{selectedUser.name}</span></span>
               <span className={isConnected ? "text-green-500 text-xs" : "text-red-500 text-xs"}>
@@ -133,7 +139,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
               </span>
             </div>
 
-            {/* Vùng nội dung tin nhắn chat 1-1 */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
               {displayMessages.map((msg, i) => {
                 const msgUserId = Number(msg.user?.id || msg.userId || msg.senderId);
@@ -154,7 +159,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
               <div ref={scrollRef} />
             </div>
 
-            {/* Input gõ tin nhắn */}
             <div className="p-3 border-t flex gap-2 bg-white">
               <input
                 className="flex-1 border rounded-lg px-3 py-2 text-sm text-black outline-none focus:border-blue-500 transition-all bg-gray-50"
