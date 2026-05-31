@@ -27,6 +27,16 @@ async function main() {
       password: hashedPassword,
     },
   });
+
+  await prisma.user.upsert({
+    where: { email: 'member2@gmail.com' },
+    update: {},
+    create: {
+      email: 'member2@gmail.com',
+      name: 'member2',
+      password: hashedPassword,
+    },
+  });
   
   await prisma.kana.createMany({
   data: [

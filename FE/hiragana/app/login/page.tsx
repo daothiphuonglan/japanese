@@ -8,7 +8,6 @@ export default function LoginPage() {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const router = useRouter();
   
-  // 🌟 ĐỒNG BỘ: Lấy hàm kích hoạt trạng thái đăng nhập toàn cục từ SocketContext ra
   const { loginContext } = useSocket();
 
   const handleSubmit = async (e: React.FormEvent) => {

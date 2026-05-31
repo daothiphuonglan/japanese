@@ -28,4 +28,18 @@ export class ChatService {
     });
     return messages;
   }
+
+  async getMessagesBetweenUsers(userA: number, userB: number) {
+    return this.prisma.message.findMany({
+      where: {
+        OR: [
+          { userId: userA, receiverId: userB },
+          { userId: userB, receiverId: userA },
+        ],
+      },
+      orderBy: {
+        createdAt: 'asc', 
+      },
+    });
+  }
 }

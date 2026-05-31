@@ -6,7 +6,9 @@ import { api } from '../../lib/axios';
 
 export default function ChatBox({ currentUser }: { currentUser: any }) {
   const { socket, isConnected } = useSocket();
-  const [messages, setMessages] = useState<any[]>([]);
+  
+  // 🌟 KHỞI TẠO CACHE NÂNG CAO: Thay mảng messages phẳng bằng Object Dictionary lưu theo ID đối phương
+  const [chatCache, setChatCache] = useState<{ [key: number]: any[] }>({});
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   
@@ -26,7 +28,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
 
   // 1. Báo danh với Server là tôi Online + Lắng nghe danh sách Online
   useEffect(() => {
-    // Nếu chưa có socket hoặc currentUser chưa load xong từ context thì đứng đợi
     if (!socket || !currentUser) return;
 
     // Báo danh với Backend
@@ -37,39 +38,70 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
 
     // Lắng nghe danh sách Online từ BE đổ về
     socket.on('get_online_users', (users: any[]) => {
-      // Lọc bỏ chính bản thân mình ra khỏi danh sách hiển thị bên cột online
       const filtered = users.filter(u => Number(u.userId) !== Number(currentUser.id));
       setOnlineUsers(filtered);
     });
 
-    // Lắng nghe tin nhắn private real-time
+    // Lắng nghe tin nhắn private real-time và đẩy trực tiếp vào khay chứa của User tương ứng trong Cache
     socket.on('receive_private_message', (newMessage) => {
-      setMessages((prev) => [...prev, newMessage]);
+      const myId = Number(userRef.current?.id);
+      const msgSenderId = Number(newMessage.userId || newMessage.senderId);
+      const msgReceiverId = Number(newMessage.receiverId);
+      
+      // Xác định ID của đối tác trong cuộc hội thoại (người gửi hoặc người nhận không phải là mình)
+      const partnerId = msgSenderId === myId ? msgReceiverId : msgSenderId;
+
+      setChatCache((prev) => ({
+        ...prev,
+        [partnerId]: [...(prev[partnerId] || []), newMessage]
+      }));
     });
 
     return () => {
       socket.off('get_online_users');
       socket.off('receive_private_message');
     };
-  }, [socket, currentUser]); // Theo dõi trực tiếp để cập nhật ngay khi đăng nhập xong
+  }, [socket, currentUser]);
 
-  // 2. Load lịch sử chat
+  // 2. 🌟 THẦN CHÚ KHÔI PHỤC LỊCH SỬ CHAT 1-1 (CÓ CHỐT CHẶN CHỐNG TRÙNG LẶP API)
   useEffect(() => {
-    const loadHistory = async () => {
+    if (!selectedUser || !currentUser) return;
+
+    const targetId = Number(selectedUser.userId);
+
+    // 🛑 CHỐT CHẶN VÀNG: Nếu trong Cache đã lưu trữ sẵn tin nhắn của người này -> Ngắt, không call API nữa!
+    if (chatCache[targetId]) {
+      return;
+    }
+
+    const fetchChatHistory = async () => {
       try {
-        const res = await api.get('/chat/messages');
-        setMessages(res.data);
+        const res = await api.get(`/chat/history`, {
+          params: {
+            senderId: Number(currentUser.id),
+            receiverId: targetId
+          }
+        });
+        
+        // Cập nhật mảng lịch sử mới tải về vào đúng vị trí ID của người nhận trong Cache
+        setChatCache(prev => ({
+          ...prev,
+          [targetId]: res.data
+        }));
       } catch (error) {
-        console.error("Lỗi tải lịch sử chat:", error);
+        console.error("Lỗi khi lấy lịch sử tin nhắn:", error);
       }
     };
-    loadHistory();
-  }, []);
 
-  // 3. Tự động cuộn xuống
+    fetchChatHistory();
+  }, [selectedUser?.userId, currentUser?.id]); 
+
+  // 3. Tự động cuộn xuống khi mảng tin nhắn của người đang chọn có biến động dữ liệu
+  const displayMessages = selectedUser ? (chatCache[Number(selectedUser.userId)] || []) : [];
+  
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [displayMessages.length]); // Theo dõi dựa vào độ dài mảng tin nhắn đang hiển thị
 
   // 4. Hàm gửi tin nhắn Private
   const handleSend = () => {
@@ -82,18 +114,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     });
     setInput('');
   };
-
-  // 5. Lọc tin nhắn chat 1-1
-  const displayMessages = messages.filter(msg => {
-    if (!selectedUser || !currentUser) return false;
-    const msgSenderId = Number(msg.userId || msg.senderId);
-    const msgReceiverId = Number(msg.receiverId);
-    const myId = Number(currentUser.id);
-    const targetId = Number(selectedUser.userId);
-
-    return (msgSenderId === myId && msgReceiverId === targetId) || 
-           (msgSenderId === targetId && msgReceiverId === myId);
-  });
 
   return (
     <div className="flex h-[500px] w-full max-w-4xl border rounded-lg bg-white overflow-hidden shadow-lg text-black">

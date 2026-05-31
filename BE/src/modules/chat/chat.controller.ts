@@ -1,13 +1,20 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get,Query } from '@nestjs/common';
 import { ChatService } from './chat.service';
 
-@Controller('chat') // 👈 QUAN TRỌNG: Định nghĩa tiền tố URL là /chat
+@Controller('chat') 
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  @Get('messages') // 👈 QUAN TRỌNG: Định nghĩa hành động là /messages
+  @Get('messages') 
   async getRecentMessages() {
-    // Logic gọi sang service lấy 50 tin nhắn cũ đã làm hôm qua
     return this.chatService.getRecentMessages();
+  }
+
+  @Get('history')
+  async getChatHistory(
+    @Query('senderId') senderId: string,
+    @Query('receiverId') receiverId: string,
+  ) {
+    return this.chatService.getMessagesBetweenUsers(Number(senderId), Number(receiverId));
   }
 }
