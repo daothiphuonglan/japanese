@@ -33,21 +33,6 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 // Backend: src/modules/chat/chat.gateway.ts
 
-@SubscribeMessage('user_list')
-async handleUserList(client: Socket) {
-  // 🌟 ĐÚNG LOGIC BE: Lấy toàn bộ người dùng từ Database (qua Prisma) thì mới biết ai offline
-  const allUsers = await this.prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-    }
-  });
-
-  // Gửi riêng cho chính client vừa yêu cầu
-  client.emit('get_user_list', allUsers);
-}
-
   
   @SubscribeMessage('user_online')
   handleUserOnline(client: Socket, payload: { userId: number; name: string }) {

@@ -10,7 +10,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   const [chatCache, setChatCache] = useState<{ [key: number]: any[] }>({});
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  const [userLists, setUserList] = useState<any[]>([]); // Danh sách tất cả người dùng trong hệ thống
+  const [userLists, setUserList] = useState<any[]>([]); // Khung xương danh sách tổng lấy từ HTTP API
 
   // State lưu người mà bạn đang bấm chọn để chat cùng
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -24,26 +24,35 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     }
   }, [currentUser]);
 
-  // 1. Quản lý sự kiện Socket (Báo danh, Lắng nghe danh sách Online, Toàn bộ User, và Tin nhắn)
+  // 1. LẤY KHUNG XƯƠNG: Gọi HTTP API lấy danh sách tất cả người dùng ngay khi vào phòng chat
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const fetchAllUsers = async () => {
+      try {
+        const res = await api.get('/chat/users');
+        // Lọc bỏ chính bản thân mình ra khỏi danh sách hiển thị
+        const filtered = res.data.filter((u: any) => Number(u.id) !== Number(currentUser.id));
+        setUserList(filtered);
+      } catch (error) {
+        console.error("Lỗi tải danh sách thành viên qua HTTP:", error);
+      }
+    };
+
+    fetchAllUsers();
+  }, [currentUser?.id]);
+
+  // 2. CHỈ ĐỂ SOCKET LO REAL-TIME: Báo danh Online và lắng nghe tín hiệu chợp tắt trạng thái
   useEffect(() => {
     if (!socket || !currentUser) return;
 
-    // Yêu cầu Backend gửi danh sách tất cả người dùng trong hệ thống
-    socket.emit('user_list');
-
-    socket.on('get_user_list', (users: any[]) => {
-      // Lọc bỏ chính bản thân mình ra khỏi danh sách hiển thị
-      const filtered = users.filter(u => Number(u.id) !== Number(currentUser.id));
-      setUserList(filtered);
-    });
-
-    // Báo danh với Backend là tôi đang Online
+    // Báo danh với Backend là tôi đang kết nối mạng
     socket.emit('user_online', {
       userId: Number(currentUser.id),
       name: currentUser.name
     });
 
-    // Lắng nghe danh sách các Socket đang Online từ BE đổ về
+    // Lắng nghe danh sách các ID đang Online từ BE đổ về (Chỉ nhận mảng ID nhỏ gọn)
     socket.on('get_online_users', (users: any[]) => {
       const filtered = users.filter(u => Number(u.userId) !== Number(currentUser.id));
       setOnlineUsers(filtered);
@@ -64,18 +73,16 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     });
 
     return () => {
-      socket.off('get_user_list');
       socket.off('get_online_users');
       socket.off('receive_private_message');
     };
   }, [socket, currentUser]);
 
-  // 2. Khôi phục lịch sử chat từ Database (Chốt chặn cache)
+  // 3. 🌟 THẦN CHÚ KHÔI PHỤC LỊCH SỬ CHAT 1-1 (Giữ nguyên tối ưu Cache)
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
 
-    // Đồng bộ: selectedUser từ bảng User có trường gốc là .id
-    const targetId = Number(selectedUser.id || selectedUser.userId);
+    const targetId = Number(selectedUser.id); // Lấy từ khung xương HTTP nên chắc chắn trường là .id
 
     if (chatCache[targetId]) {
       return;
@@ -100,23 +107,23 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     };
 
     fetchChatHistory();
-  }, [selectedUser, currentUser]);
+  }, [selectedUser?.id, currentUser?.id]); 
 
-  // 3. Tự động cuộn xuống
-  const targetUserId = selectedUser ? Number(selectedUser.id || selectedUser.userId) : 0;
+  // 4. Tự động cuộn xuống
+  const targetUserId = selectedUser ? Number(selectedUser.id) : 0;
   const displayMessages = selectedUser ? (chatCache[targetUserId] || []) : [];
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [displayMessages.length]);
 
-  // 4. Hàm gửi tin nhắn Private
+  // 5. Hàm gửi tin nhắn Private
   const handleSend = () => {
     if (!input.trim() || !currentUser || !selectedUser) return;
 
     socket.emit('send_private_message', {
       senderId: Number(currentUser.id),
-      receiverId: Number(selectedUser.id || selectedUser.userId),
+      receiverId: Number(selectedUser.id),
       content: input,
     });
     setInput('');
@@ -125,7 +132,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   return (
     <div className="flex h-[500px] w-full max-w-4xl border rounded-lg bg-white overflow-hidden shadow-lg text-black">
 
-      {/* CỘT TRÁI: DANH SÁCH TẤT CẢ USER (ONLINE/OFFLINE) */}
+      {/* CỘT TRÁI: HIỂN THỊ TRỘN DỮ LIỆU */}
       <div className="w-1/3 border-r bg-gray-50 flex flex-col">
         <div className="p-3 border-b bg-gray-100 font-bold flex justify-between items-center">
           <span>Danh sách thành viên</span>
@@ -138,9 +145,9 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
             <p className="text-xs text-gray-400 text-center mt-4">Không có thành viên nào</p>
           ) : (
             userLists.map((user, idx) => {
-             
+              // So khớp ID từ khung xương HTTP với danh sách Online từ Socket
               const isOnline = onlineUsers.some(onlineUser => Number(onlineUser.userId) === Number(user.id));
-              const isSelected = Number(selectedUser?.id || selectedUser?.userId) === Number(user.id);
+              const isSelected = Number(selectedUser?.id) === Number(user.id);
 
               return (
                 <button
@@ -152,7 +159,6 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
                       : 'hover:bg-gray-200 text-gray-700'
                   }`}
                 >
-                  {/* Dấu chấm trạng thái: Online màu xanh lá, Offline màu xám */}
                   <span className={`w-2.5 h-2.5 rounded-full border border-white transition-colors duration-300 ${
                     isOnline ? 'bg-green-500' : 'bg-gray-300'
                   }`}></span>
@@ -164,7 +170,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
         </div>
       </div>
 
-      {/* CỘT PHẢI: KHUNG CHAT 1-1 */}
+      {/* CỘT PHẢI: KHUNG CHAT 1-1 CHÍNH CHỦ */}
       <div className="w-2/3 flex flex-col bg-white">
         {selectedUser ? (
           <>
@@ -192,6 +198,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
                   </div>
                 );
               })}
+              <div ref={scrollRef} />
             </div>
 
             <div className="p-3 border-t flex gap-2 bg-white">

@@ -17,4 +17,9 @@ export class ChatController {
   ) {
     return this.chatService.getMessagesBetweenUsers(Number(senderId), Number(receiverId));
   }
+
+  @Get('users')
+  async getAllUsers() {
+    return this.chatService.getAllUsersFromDb();
+  }
 }

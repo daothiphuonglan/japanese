@@ -42,4 +42,17 @@ export class ChatService {
       },
     });
   }
+
+  async getAllUsersFromDb() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        name: 'asc', // Sắp xếp theo bảng chữ cái từ A-Z cho đẹp danh sách
+      }
+    });
+  }
+  
 }
