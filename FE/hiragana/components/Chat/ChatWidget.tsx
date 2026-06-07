@@ -1,15 +1,20 @@
-// components/Chat/ChatWidget.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSocket } from '@/context/SocketContext';
 import { useRouter } from 'next/navigation';
-import  ChatBox from './ChatBox';
+import ChatBox from './ChatBox';
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const { user } = useSocket(); // Lấy user từ Context (tự động có sau khi login)
+  const { user } = useSocket(); // Giữ nguyên lấy 'user' từ Context
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Đảm bảo code chạy ở Client-side hoàn toàn trước khi check render
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleToggle = () => {
     if (!user) {
@@ -21,10 +26,11 @@ export default function ChatWidget() {
     setIsOpen(!isOpen);
   };
 
+  if (!isMounted) return null;
+
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      {/* ĐÂY LÀ CHỖ KẾT HỢP: 
-          Lấy 'user' từ Context truyền vào 'currentUser' của ChatBox 
+      {/* 🌟 ĐỒNG BỘ: Truyền biến 'user' từ Context vào thuộc tính currentUser của ChatBox 
       */}
       {isOpen && user && (
         <div className="mb-4 shadow-2xl">
@@ -34,7 +40,9 @@ export default function ChatWidget() {
 
       <button
         onClick={handleToggle}
-        className={`p-4 rounded-full shadow-lg text-white ${user ? 'bg-blue-600' : 'bg-gray-500'}`}
+        className={`p-4 rounded-full shadow-lg text-white transition-all ${
+          user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-500 hover:bg-gray-600'
+        }`}
       >
         {isOpen ? '✖ Đóng' : '💬 Thảo luận'}
       </button>
