@@ -56,32 +56,24 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   @SubscribeMessage('send_private_message')
-async handlePrivateMessage(
-  client: Socket,
-  payload: { senderId: number; receiverId: number; content: string },
-) {
-  try {
-    const newMessage = await this.prisma.message.create({
-      data: {
-        content: payload.content,
-        userId: Number(payload.senderId),
-        receiverId: Number(payload.receiverId),
-      },
-      include: { user: true },
-    });
+  async handlePrivateMessage(
+    client: Socket,
+    payload: { senderId: number; receiverId: number; content: string },
+  ) {
+    try {
 
-    // 🌟 THAY ĐỔI CHIẾN THUẬT: Chỉ tìm và gửi cho NGƯỜI NHẬN, người gửi (chính client này) sẽ không nhận lại nữa
-    const receiverEntries = Array.from(this.activeUsers.entries()).filter(
-      ([_, value]) => value.userId === Number(payload.receiverId)
-    );
-
-    if (receiverEntries.length > 0) {
-      receiverEntries.forEach(([socketId, _]) => {
-        this.server.to(socketId).emit('receive_private_message', newMessage);
+      const newMessage = await this.prisma.message.create({
+        data: {
+          content: payload.content,
+          userId: Number(payload.senderId),
+          receiverId: Number(payload.receiverId),
+        },
+        include: { user: true },
       });
+
+      this.server.emit('receive_private_message', newMessage);
+    } catch (error) {
+      this.logger.error('Lỗi chat private:', error);
     }
-  } catch (error) {
-    this.logger.error('Lỗi chat private:', error);
   }
-}
 }

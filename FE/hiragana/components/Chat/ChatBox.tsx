@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSocket } from '@/context/SocketContext';
 import { api } from '../../lib/axios';
 
@@ -10,14 +10,13 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   const [chatCache, setChatCache] = useState<{ [key: number]: any[] }>({});
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  const [userLists, setUserList] = useState<any[]>([]); // Khung xương danh sách lấy từ HTTP API
+  const [userLists, setUserList] = useState<any[]>([]); // Khung xương danh sách tổng lấy từ HTTP API
 
   // State lưu người mà bạn đang bấm chọn để chat cùng
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const userRef = useRef(currentUser);
-  const isFirstLoad = useRef(true); // Lính canh quản lý cuộn thông minh khi mở hộp chat
 
   useEffect(() => {
     if (currentUser) {
@@ -25,41 +24,15 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     }
   }, [currentUser]);
 
-  // ==========================================
-  // 🌟 TUYỆT CHIÊU TỐI ƯU: SẮP XẾP DANH SÁCH LÊN ĐẦU BẰNG USEMEMO
-  // ==========================================
-  const sortedUserList = useMemo(() => {
-    return [...userLists].sort((a, b) => {
-      const timeA = a.lastMessageTime || 0;
-      const timeB = b.lastMessageTime || 0;
-      
-      // Nếu cả 2 chưa từng nhắn tin cho nhau, giữ nguyên sắp xếp theo bảng chữ cái A-Z
-      if (timeA === 0 && timeB === 0) {
-        return a.name.localeCompare(b.name);
-      }
-      
-      // Ngược lại, ông nào có mốc thời gian tin nhắn lớn hơn (mới hơn) sẽ được đẩy lên đầu
-      return timeB - timeA;
-    });
-  }, [userLists]); // Khối lệnh này chỉ chạy lại khi mảng gốc userLists bị cập nhật thuộc tính mốc thời gian
-
-  // Mỗi khi bạn bấm đổi phòng chat với người khác, reset lại lính canh cuộn trang
-  useEffect(() => {
-    isFirstLoad.current = true;
-  }, [selectedUser?.id]);
-
-
-  // 1. LẤY KHUNG XƯƠNG TỪ HTTP API
+  // 1. LẤY KHUNG XƯƠNG: Gọi HTTP API lấy danh sách tất cả người dùng ngay khi vào phòng chat
   useEffect(() => {
     if (!currentUser) return;
 
     const fetchAllUsers = async () => {
       try {
         const res = await api.get('/chat/users');
-        // Lọc bỏ chính bản thân mình ra khỏi danh sách, đồng thời nạp mốc thời gian mặc định là 0
-        const filtered = res.data
-          .filter((u: any) => Number(u.id) !== Number(currentUser.id))
-          .map((u: any) => ({ ...u, lastMessageTime: 0 })); // 👈 Gắn mốc thời gian mặc định ban đầu
+        // Lọc bỏ chính bản thân mình ra khỏi danh sách hiển thị
+        const filtered = res.data.filter((u: any) => Number(u.id) !== Number(currentUser.id));
         setUserList(filtered);
       } catch (error) {
         console.error("Lỗi tải danh sách thành viên qua HTTP:", error);
@@ -69,8 +42,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     fetchAllUsers();
   }, [currentUser?.id]);
 
-
-  // 2. CHỈ ĐỂ SOCKET LO REAL-TIME & TIN NHẮN ĐẾN
+  // 2. CHỈ ĐỂ SOCKET LO REAL-TIME: Báo danh Online và lắng nghe tín hiệu chợp tắt trạng thái
   useEffect(() => {
     if (!socket || !currentUser) return;
 
@@ -80,53 +52,37 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
       name: currentUser.name
     });
 
-    // Lắng nghe danh sách các ID đang Online từ BE đổ về
+    // Lắng nghe danh sách các ID đang Online từ BE đổ về (Chỉ nhận mảng ID nhỏ gọn)
     socket.on('get_online_users', (users: any[]) => {
       const filtered = users.filter(u => Number(u.userId) !== Number(currentUser.id));
       setOnlineUsers(filtered);
     });
 
-    // Lắng nghe tin nhắn private real-time từ người khác gửi đến
+    // Lắng nghe tin nhắn private real-time
     socket.on('receive_private_message', (newMessage) => {
       const myId = Number(userRef.current?.id);
       const msgSenderId = Number(newMessage.userId || newMessage.senderId);
       const msgReceiverId = Number(newMessage.receiverId);
 
-      // Xác định ID của người đang chat với mình trong cuộc hội thoại này
       const partnerId = msgSenderId === myId ? msgReceiverId : msgSenderId;
 
-      // 🌟 SỬA ĐÚNG KHÚC NÀY: Check trùng tin nhắn dựa trên id lưu từ DB để không bị x2 tin nhắn
-      setChatCache((prev) => {
-        const currentChat = prev[partnerId] || [];
-        const isExist = currentChat.some((m) => m.id === newMessage.id);
-
-        if (isExist) return prev; // Nếu đã có tin nhắn id này rồi thì đứng im không nạp nữa
-
-        return {
-          ...prev,
-          [partnerId]: [...currentChat, newMessage]
-        };
-      });
-
-      // Kịch bản B: Cập nhật mốc thời gian mới nhất để kích hoạt useMemo đẩy User này lên đầu list
-      setUserList((prevList) => 
-        prevList.map(u => Number(u.id) === partnerId ? { ...u, lastMessageTime: Date.now() } : u)
-      );
+      setChatCache((prev) => ({
+        ...prev,
+        [partnerId]: [...(prev[partnerId] || []), newMessage]
+      }));
     });
 
-    // Thêm dọn dẹp cổng nghe để triệt tiêu lỗi listen x2
     return () => {
       socket.off('get_online_users');
       socket.off('receive_private_message');
     };
   }, [socket, currentUser]);
 
-
-  // 3. THẦN CHÚ KHÔI PHỤC LỊCH SỬ CHAT TỪ DATABASE (Có chốt chặn Cache)
+  // 3. 🌟 THẦN CHÚ KHÔI PHỤC LỊCH SỬ CHAT 1-1 (Giữ nguyên tối ưu Cache)
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
 
-    const targetId = Number(selectedUser.id);
+    const targetId = Number(selectedUser.id); // Lấy từ khung xương HTTP nên chắc chắn trường là .id
 
     if (chatCache[targetId]) {
       return;
@@ -153,68 +109,30 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     fetchChatHistory();
   }, [selectedUser?.id, currentUser?.id]); 
 
-
-  // 4. TỰ ĐỘNG CUỘN XUỐNG THÔNG MINH (Không bị giật hình khi mở box chat)
+  // 4. Tự động cuộn xuống
   const targetUserId = selectedUser ? Number(selectedUser.id) : 0;
   const displayMessages = selectedUser ? (chatCache[targetUserId] || []) : [];
 
   useEffect(() => {
-    if (displayMessages.length === 0) return;
-
-    if (isFirstLoad.current) {
-      // Vừa mở chat box phát nhảy ngay xuống tin nhắn mới nhất lập tức (0 giây độ trễ)
-      scrollRef.current?.scrollIntoView({ behavior: 'auto' });
-      isFirstLoad.current = false;
-    } else {
-      // Đang chat dở mà có chữ mới bay vào thì cuộn mượt mà xuống dưới
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [displayMessages.length]);
 
+  // 5. Hàm gửi tin nhắn Private
+  const handleSend = () => {
+    if (!input.trim() || !currentUser || !selectedUser) return;
 
-  // 5. HÀM CHỦ ĐỘNG GỬI TIN NHẮN PRIVATE
-const handleSend = () => {
-  if (!input.trim() || !currentUser || !selectedUser) return;
-
-  const targetId = Number(selectedUser.id);
-  
-  // Tạo một object tin nhắn tạm thời để hiển thị ngay trên màn hình của mình
-  const myNewMessage = {
-    id: Date.now(), // Dùng tạm timestamp làm ID để tránh trùng
-    content: input,
-    userId: Number(currentUser.id),
-    senderId: Number(currentUser.id),
-    receiverId: targetId,
-    createdAt: new Date().toISOString(),
-    user: { id: Number(currentUser.id), name: currentUser.name }
+    socket.emit('send_private_message', {
+      senderId: Number(currentUser.id),
+      receiverId: Number(selectedUser.id),
+      content: input,
+    });
+    setInput('');
   };
 
-  // 1. Đút luôn vào cache của mình để hiển thị lập tức
-  setChatCache((prev) => ({
-    ...prev,
-    [targetId]: [...(prev[targetId] || []), myNewMessage]
-  }));
-
-  // 2. Bắn tin nhắn qua cổng socket lên Server cho đối phương nhận
-  socket.emit('send_private_message', {
-    senderId: Number(currentUser.id),
-    receiverId: targetId,
-    content: input,
-  });
-
-  // Đẩy user lên đầu danh sách
-  setUserList((prevList) => 
-    prevList.map(u => Number(u.id) === targetId ? { ...u, lastMessageTime: Date.now() } : u)
-  );
-
-  setInput('');
-};
-
-  // 🌟 GIỮ NGUYÊN TOÀN BỘ GIAO DIỆN UI GỐC CỦA BẠN 100%
   return (
     <div className="flex h-[500px] w-full max-w-4xl border rounded-lg bg-white overflow-hidden shadow-lg text-black">
 
-      {/* CỘT TRÁI: HIỂN THỊ DANH SÁCH ĐÃ ĐƯỢC TỰ ĐỘNG SẮP XẾP QUA USEMEMO */}
+      {/* CỘT TRÁI: HIỂN THỊ TRỘN DỮ LIỆU */}
       <div className="w-1/3 border-r bg-gray-50 flex flex-col">
         <div className="p-3 border-b bg-gray-100 font-bold flex justify-between items-center">
           <span>Danh sách thành viên</span>
@@ -223,10 +141,11 @@ const handleSend = () => {
           </span>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {sortedUserList.length === 0 ? (
+          {userLists.length === 0 ? (
             <p className="text-xs text-gray-400 text-center mt-4">Không có thành viên nào</p>
           ) : (
-            sortedUserList.map((user, idx) => {
+            userLists.map((user, idx) => {
+              // So khớp ID từ khung xương HTTP với danh sách Online từ Socket
               const isOnline = onlineUsers.some(onlineUser => Number(onlineUser.userId) === Number(user.id));
               const isSelected = Number(selectedUser?.id) === Number(user.id);
 
@@ -251,7 +170,7 @@ const handleSend = () => {
         </div>
       </div>
 
-      {/* CỘT PHẢI: KHUNG CHAT 1-1 */}
+      {/* CỘT PHẢI: KHUNG CHAT 1-1 CHÍNH CHỦ */}
       <div className="w-2/3 flex flex-col bg-white">
         {selectedUser ? (
           <>
