@@ -102,6 +102,7 @@ function Lobby({ user, phase, onFind, onCancel }: {
 // ─────────────────────────────────────────────
 function useVoiceRecognition(onResult: (text: string) => void) {
   const recognitionRef = useRef<any>(null);
+  const isStartedRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript]   = useState('');
   const [supported, setSupported]     = useState(true);
@@ -117,30 +118,73 @@ function useVoiceRecognition(onResult: (text: string) => void) {
     rec.interimResults  = false;
     rec.maxAlternatives = 1;
 
+    rec.onstart = () => {
+      setIsListening(true);
+    };
+
     rec.onresult = (e: any) => {
       const text = e.results[0][0].transcript.trim();
       setTranscript(text);
       onResult(text);
     };
-    rec.onend = () => setIsListening(false);
-    rec.onerror = () => setIsListening(false);
+
+    rec.onend = () => {
+      setIsListening(false);
+      isStartedRef.current = false;
+    };
+
+    rec.onerror = () => {
+      setIsListening(false);
+      isStartedRef.current = false;
+    };
 
     recognitionRef.current = rec;
   }, [onResult]);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || isListening) return;
+    if (!recognitionRef.current || isStartedRef.current) return;
+    isStartedRef.current = true;
     setTranscript('');
-    setIsListening(true);
-    recognitionRef.current.start();
-  }, [isListening]);
+    try {
+      recognitionRef.current.start();
+    } catch (err) {
+      console.error('SpeechRecognition start error:', err);
+      isStartedRef.current = false;
+      setIsListening(false);
+    }
+  }, []);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
+    if (!recognitionRef.current || !isStartedRef.current) return;
+    try {
+      recognitionRef.current.stop();
+    } catch (err) {
+      console.error('SpeechRecognition stop error:', err);
+    }
   }, []);
 
   return { isListening, transcript, supported, startListening, stopListening };
+}
+
+// ─────────────────────────────────────────────
+// TTS Hook  (Web Speech Synthesis)
+// ─────────────────────────────────────────────
+function useTTS() {
+  const speak = useCallback((text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel(); // stop any ongoing speech
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ja-JP';
+    utter.rate = 0.85;
+    utter.pitch = 1.1;
+    // Prefer a Japanese voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const jpVoice = voices.find(v => v.lang.startsWith('ja'));
+    if (jpVoice) utter.voice = jpVoice;
+    window.speechSynthesis.speak(utter);
+  }, []);
+
+  return { speak };
 }
 
 // ─────────────────────────────────────────────
@@ -160,7 +204,18 @@ function Arena({ matchData, currentUser, onFinish }: {
   const [feedback,      setFeedback]      = useState<'correct' | 'wrong' | null>(null);
   const [inputMode,     setInputMode]     = useState<InputMode>('text');
   const [voiceHint,     setVoiceHint]     = useState('');
+  const [shownWord,     setShownWord]     = useState<string | null>(null); // word displayed after feedback
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { speak } = useTTS();
+
+  // Play TTS for the current word on mount / word change
+  useEffect(() => {
+    if (inputMode === 'voice') {
+      speak(words[currentIndex].char);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, inputMode]);
   const finishedRef = useRef(false);
 
   // Dừng game không bị gọi 2 lần
@@ -195,16 +250,24 @@ function Arena({ matchData, currentUser, onFinish }: {
     setFeedback(isCorrect ? 'correct' : 'wrong');
     if (isCorrect) setScore(newScore);
 
+    // Auto-play TTS of the correct word after a short delay so user hears pronunciation
+    const correctChar = word.char;
+    setTimeout(() => {
+      speak(correctChar);
+      setShownWord(correctChar);
+    }, 200);
+
     setTimeout(() => {
       setFeedback(null);
       setTextInput('');
       setVoiceHint('');
+      setShownWord(null);
       if (currentIndex + 1 < words.length) {
         setCurrentIndex(i => i + 1);
       } else {
         triggerFinish(newScore);
       }
-    }, 700);
+    }, 1400);
   }, [feedback, words, currentIndex, score, triggerFinish]);
 
   // ── Voice recognition ───────────────────────
@@ -270,9 +333,22 @@ function Arena({ matchData, currentUser, onFinish }: {
                          : feedback === 'wrong'
                            ? 'bg-red-500/10 border-red-500/50'
                            : 'bg-white/5 border-white/10'}`}>
-        <p className="text-xs text-slate-400 uppercase tracking-widest">
-          Câu {currentIndex + 1} / {words.length}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-slate-400 uppercase tracking-widest">
+            Câu {currentIndex + 1} / {words.length}
+          </p>
+          {/* Speaker button – always available to replay pronunciation */}
+          <button
+            id="btn-tts"
+            onClick={() => speak(words[currentIndex].char)}
+            title="Nghe phát âm"
+            className="w-7 h-7 flex items-center justify-center rounded-lg
+                       bg-white/5 border border-white/10 hover:bg-indigo-500/20
+                       hover:border-indigo-500/40 transition-all duration-200 text-base"
+          >
+            🔊
+          </button>
+        </div>
 
         {/* Ký tự Hiragana to */}
         <p className="text-9xl font-black text-white select-none leading-none">
@@ -290,12 +366,30 @@ function Arena({ matchData, currentUser, onFinish }: {
         )}
 
         {feedback === 'correct' && (
-          <p className="text-green-400 font-bold text-xl animate-bounce">✓ Đúng! +10 điểm</p>
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-green-400 font-bold text-xl animate-bounce">✓ Đúng! +10 điểm</p>
+            {shownWord && (
+              <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full
+                               bg-green-500/20 border border-green-500/30 text-green-300">
+                🔊 <span className="font-bold text-lg">{shownWord}</span>
+                <span className="text-xs text-green-400/70">({words[currentIndex].romaji})</span>
+              </span>
+            )}
+          </div>
         )}
         {feedback === 'wrong' && (
-          <p className="text-red-400 font-bold text-xl">
-            ✗ Sai! Đáp án: <span className="font-black">{words[currentIndex].romaji}</span>
-          </p>
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-red-400 font-bold text-xl">
+              ✗ Sai! Đáp án: <span className="font-black">{words[currentIndex].romaji}</span>
+            </p>
+            {shownWord && (
+              <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full
+                               bg-red-500/20 border border-red-500/30 text-red-300">
+                🔊 <span className="font-bold text-lg">{shownWord}</span>
+                <span className="text-xs text-red-400/70">({words[currentIndex].romaji})</span>
+              </span>
+            )}
+          </div>
         )}
       </div>
 
