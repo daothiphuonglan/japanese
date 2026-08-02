@@ -1,8 +1,94 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react';
 import { useSocket } from '@/context/SocketContext';
 import { api } from '../../lib/axios';
+
+// ─── Memoized user list item ───
+const UserListItem = memo(function UserListItem({
+  user,
+  isOnline,
+  isSelected,
+  onSelect,
+}: {
+  user: any;
+  isOnline: boolean;
+  isSelected: boolean;
+  onSelect: (user: any) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(user)}
+      className={`w-full text-left p-2.5 rounded-lg text-sm transition-all flex items-center gap-2 ${
+        isSelected
+          ? 'bg-blue-600 text-white font-medium shadow-sm'
+          : 'hover:bg-gray-200 text-gray-700'
+      }`}
+    >
+      <span className={`w-2.5 h-2.5 rounded-full border border-white transition-colors duration-300 ${
+        isOnline ? 'bg-green-500' : 'bg-gray-300'
+      }`}></span>
+      <span className="truncate">{user.name}</span>
+    </button>
+  );
+});
+
+// ─── Memoized message bubble ───
+const MessageBubble = memo(function MessageBubble({
+  msg,
+  isMyMessage,
+  senderName,
+}: {
+  msg: any;
+  isMyMessage: boolean;
+  senderName: string;
+}) {
+  return (
+    <div className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
+      <span className="text-[10px] text-gray-400 mb-0.5 px-1">{senderName}</span>
+      <div className={`px-3 py-2 rounded-xl max-w-[75%] text-sm break-words shadow-sm ${
+        isMyMessage ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'
+      }`}>
+        {msg.content}
+      </div>
+    </div>
+  );
+});
+
+// ─── Memoized message list ───
+const MessageList = memo(function MessageList({
+  messages,
+  currentUserId,
+  currentUserName,
+  selectedUserName,
+  scrollRef,
+}: {
+  messages: any[];
+  currentUserId: number;
+  currentUserName: string;
+  selectedUserName: string;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+      {messages.map((msg, i) => {
+        const msgUserId = Number(msg.user?.id || msg.userId || msg.senderId);
+        const isMyMessage = msgUserId === currentUserId;
+        const senderName = isMyMessage ? (currentUserName || 'Tôi') : selectedUserName;
+
+        return (
+          <MessageBubble
+            key={msg.id || i}
+            msg={msg}
+            isMyMessage={isMyMessage}
+            senderName={senderName}
+          />
+        );
+      })}
+      <div ref={scrollRef} />
+    </div>
+  );
+});
 
 export default function ChatBox({ currentUser }: { currentUser: any }) {
   const { socket, isConnected } = useSocket();
@@ -10,14 +96,14 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   const [chatCache, setChatCache] = useState<{ [key: number]: any[] }>({});
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  const [userLists, setUserList] = useState<any[]>([]); // Khung xương danh sách lấy từ HTTP API
+  const [userLists, setUserList] = useState<any[]>([]);
 
   // State lưu người mà bạn đang bấm chọn để chat cùng
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const userRef = useRef(currentUser);
-  const isFirstLoad = useRef(true); // Lính canh quản lý cuộn thông minh khi mở hộp chat
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     if (currentUser) {
@@ -25,29 +111,34 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     }
   }, [currentUser]);
 
-  // ==========================================
-  // 🌟 TUYỆT CHIÊU TỐI ƯU: SẮP XẾP DANH SÁCH LÊN ĐẦU BẰNG USEMEMO
-  // ==========================================
+  // Sắp xếp danh sách user
   const sortedUserList = useMemo(() => {
     return [...userLists].sort((a, b) => {
       const timeA = a.lastMessageTime || 0;
       const timeB = b.lastMessageTime || 0;
-      
-      // Nếu cả 2 chưa từng nhắn tin cho nhau, giữ nguyên sắp xếp theo bảng chữ cái A-Z
+
       if (timeA === 0 && timeB === 0) {
         return a.name.localeCompare(b.name);
       }
-      
-      // Ngược lại, ông nào có mốc thời gian tin nhắn lớn hơn (mới hơn) sẽ được đẩy lên đầu
+
       return timeB - timeA;
     });
-  }, [userLists]); // Khối lệnh này chỉ chạy lại khi mảng gốc userLists bị cập nhật thuộc tính mốc thời gian
+  }, [userLists]);
+
+  // Set of online user IDs for O(1) lookup instead of O(n) .some() per item
+  const onlineUserIds = useMemo(() => {
+    return new Set(onlineUsers.map(u => Number(u.userId)));
+  }, [onlineUsers]);
 
   // Mỗi khi bạn bấm đổi phòng chat với người khác, reset lại lính canh cuộn trang
   useEffect(() => {
     isFirstLoad.current = true;
   }, [selectedUser?.id]);
 
+  // Stable callback for selecting a user
+  const handleSelectUser = useCallback((user: any) => {
+    setSelectedUser(user);
+  }, []);
 
   // 1. LẤY KHUNG XƯƠNG TỪ HTTP API
   useEffect(() => {
@@ -56,10 +147,9 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     const fetchAllUsers = async () => {
       try {
         const res = await api.get('/chat/users');
-        // Lọc bỏ chính bản thân mình ra khỏi danh sách, đồng thời nạp mốc thời gian mặc định là 0
         const filtered = res.data
           .filter((u: any) => Number(u.id) !== Number(currentUser.id))
-          .map((u: any) => ({ ...u, lastMessageTime: 0 })); // 👈 Gắn mốc thời gian mặc định ban đầu
+          .map((u: any) => ({ ...u, lastMessageTime: 0 }));
         setUserList(filtered);
       } catch (error) {
         console.error("Lỗi tải danh sách thành viên qua HTTP:", error);
@@ -74,33 +164,28 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   useEffect(() => {
     if (!socket || !currentUser) return;
 
-    // Báo danh với Backend là tôi đang kết nối mạng
     socket.emit('user_online', {
       userId: Number(currentUser.id),
       name: currentUser.name
     });
 
-    // Lắng nghe danh sách các ID đang Online từ BE đổ về
     socket.on('get_online_users', (users: any[]) => {
       const filtered = users.filter(u => Number(u.userId) !== Number(currentUser.id));
       setOnlineUsers(filtered);
     });
 
-    // Lắng nghe tin nhắn private real-time từ người khác gửi đến
     socket.on('receive_private_message', (newMessage) => {
       const myId = Number(userRef.current?.id);
       const msgSenderId = Number(newMessage.userId || newMessage.senderId);
       const msgReceiverId = Number(newMessage.receiverId);
 
-      // Xác định ID của người đang chat với mình trong cuộc hội thoại này
       const partnerId = msgSenderId === myId ? msgReceiverId : msgSenderId;
 
-      // 🌟 SỬA ĐÚNG KHÚC NÀY: Check trùng tin nhắn dựa trên id lưu từ DB để không bị x2 tin nhắn
       setChatCache((prev) => {
         const currentChat = prev[partnerId] || [];
         const isExist = currentChat.some((m) => m.id === newMessage.id);
 
-        if (isExist) return prev; // Nếu đã có tin nhắn id này rồi thì đứng im không nạp nữa
+        if (isExist) return prev;
 
         return {
           ...prev,
@@ -108,13 +193,11 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
         };
       });
 
-      // Kịch bản B: Cập nhật mốc thời gian mới nhất để kích hoạt useMemo đẩy User này lên đầu list
       setUserList((prevList) => 
         prevList.map(u => Number(u.id) === partnerId ? { ...u, lastMessageTime: Date.now() } : u)
       );
     });
 
-    // Thêm dọn dẹp cổng nghe để triệt tiêu lỗi listen x2
     return () => {
       socket.off('get_online_users');
       socket.off('receive_private_message');
@@ -154,7 +237,7 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
   }, [selectedUser?.id, currentUser?.id]); 
 
 
-  // 4. TỰ ĐỘNG CUỘN XUỐNG THÔNG MINH (Không bị giật hình khi mở box chat)
+  // 4. TỰ ĐỘNG CUỘN XUỐNG THÔNG MINH
   const targetUserId = selectedUser ? Number(selectedUser.id) : 0;
   const displayMessages = selectedUser ? (chatCache[targetUserId] || []) : [];
 
@@ -162,55 +245,51 @@ export default function ChatBox({ currentUser }: { currentUser: any }) {
     if (displayMessages.length === 0) return;
 
     if (isFirstLoad.current) {
-      // Vừa mở chat box phát nhảy ngay xuống tin nhắn mới nhất lập tức (0 giây độ trễ)
       scrollRef.current?.scrollIntoView({ behavior: 'auto' });
       isFirstLoad.current = false;
     } else {
-      // Đang chat dở mà có chữ mới bay vào thì cuộn mượt mà xuống dưới
       scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [displayMessages.length]);
 
 
-  // 5. HÀM CHỦ ĐỘNG GỬI TIN NHẮN PRIVATE
-const handleSend = () => {
-  if (!input.trim() || !currentUser || !selectedUser) return;
+  // 5. HÀM CHỦ ĐỘNG GỬI TIN NHẮN PRIVATE — stabilized with useCallback
+  const handleSend = useCallback(() => {
+    if (!input.trim() || !currentUser || !selectedUser) return;
 
-  const targetId = Number(selectedUser.id);
-  
-  // Tạo một object tin nhắn tạm thời để hiển thị ngay trên màn hình của mình
-  const myNewMessage = {
-    id: Date.now(), // Dùng tạm timestamp làm ID để tránh trùng
-    content: input,
-    userId: Number(currentUser.id),
-    senderId: Number(currentUser.id),
-    receiverId: targetId,
-    createdAt: new Date().toISOString(),
-    user: { id: Number(currentUser.id), name: currentUser.name }
-  };
+    const targetId = Number(selectedUser.id);
 
-  // 1. Đút luôn vào cache của mình để hiển thị lập tức
-  setChatCache((prev) => ({
-    ...prev,
-    [targetId]: [...(prev[targetId] || []), myNewMessage]
-  }));
+    const myNewMessage = {
+      id: Date.now(),
+      content: input,
+      userId: Number(currentUser.id),
+      senderId: Number(currentUser.id),
+      receiverId: targetId,
+      createdAt: new Date().toISOString(),
+      user: { id: Number(currentUser.id), name: currentUser.name }
+    };
 
-  // 2. Bắn tin nhắn qua cổng socket lên Server cho đối phương nhận
-  socket.emit('send_private_message', {
-    senderId: Number(currentUser.id),
-    receiverId: targetId,
-    content: input,
-  });
+    setChatCache((prev) => ({
+      ...prev,
+      [targetId]: [...(prev[targetId] || []), myNewMessage]
+    }));
 
-  // Đẩy user lên đầu danh sách
-  setUserList((prevList) => 
-    prevList.map(u => Number(u.id) === targetId ? { ...u, lastMessageTime: Date.now() } : u)
-  );
+    socket.emit('send_private_message', {
+      senderId: Number(currentUser.id),
+      receiverId: targetId,
+      content: input,
+    });
 
-  setInput('');
-};
+    setUserList((prevList) => 
+      prevList.map(u => Number(u.id) === targetId ? { ...u, lastMessageTime: Date.now() } : u)
+    );
 
-  // 🌟 GIỮ NGUYÊN TOÀN BỘ GIAO DIỆN UI GỐC CỦA BẠN 100%
+    setInput('');
+  }, [input, currentUser, selectedUser, socket]);
+
+  const currentUserId = Number(currentUser?.id);
+  const currentUserName = currentUser?.name || 'Tôi';
+
   return (
     <div className="flex h-[500px] w-full max-w-4xl border rounded-lg bg-white overflow-hidden shadow-lg text-black">
 
@@ -226,27 +305,15 @@ const handleSend = () => {
           {sortedUserList.length === 0 ? (
             <p className="text-xs text-gray-400 text-center mt-4">Không có thành viên nào</p>
           ) : (
-            sortedUserList.map((user, idx) => {
-              const isOnline = onlineUsers.some(onlineUser => Number(onlineUser.userId) === Number(user.id));
-              const isSelected = Number(selectedUser?.id) === Number(user.id);
-
-              return (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedUser(user)}
-                  className={`w-full text-left p-2.5 rounded-lg text-sm transition-all flex items-center gap-2 ${
-                    isSelected
-                      ? 'bg-blue-600 text-white font-medium shadow-sm'
-                      : 'hover:bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full border border-white transition-colors duration-300 ${
-                    isOnline ? 'bg-green-500' : 'bg-gray-300'
-                  }`}></span>
-                  <span className="truncate">{user.name}</span>
-                </button>
-              );
-            })
+            sortedUserList.map((user) => (
+              <UserListItem
+                key={user.id}
+                user={user}
+                isOnline={onlineUserIds.has(Number(user.id))}
+                isSelected={Number(selectedUser?.id) === Number(user.id)}
+                onSelect={handleSelectUser}
+              />
+            ))
           )}
         </div>
       </div>
@@ -262,25 +329,13 @@ const handleSend = () => {
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
-              {displayMessages.map((msg, i) => {
-                const msgUserId = Number(msg.user?.id || msg.userId || msg.senderId);
-                const isMyMessage = msgUserId === Number(currentUser?.id);
-                const senderName = isMyMessage ? (currentUser?.name || 'Tôi') : selectedUser.name;
-
-                return (
-                  <div key={i} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
-                    <span className="text-[10px] text-gray-400 mb-0.5 px-1">{senderName}</span>
-                    <div className={`px-3 py-2 rounded-xl max-w-[75%] text-sm break-words shadow-sm ${
-                      isMyMessage ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'
-                    }`}>
-                      {msg.content}
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={scrollRef} />
-            </div>
+            <MessageList
+              messages={displayMessages}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              selectedUserName={selectedUser.name}
+              scrollRef={scrollRef}
+            />
 
             <div className="p-3 border-t flex gap-2 bg-white">
               <input

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { socket } from '../lib/socket';
 
 interface SocketContextType {
@@ -66,8 +66,12 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  const contextValue = useMemo(() => ({
+    isConnected, socket, user, loginContext, logoutContext,
+  }), [isConnected, user, loginContext, logoutContext]);
+
   return (
-    <SocketContext.Provider value={{ isConnected, socket, user, loginContext, logoutContext }}>
+    <SocketContext.Provider value={contextValue}>
       {children}
     </SocketContext.Provider>
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import Link from 'next/link';
 import {
   GamePhase, InputMode, MatchData, GameResult,
@@ -7,9 +8,9 @@ import {
 } from './useGame';
 
 // ─────────────────────────────────────────────
-// Lobby
+// Lobby (memoized)
 // ─────────────────────────────────────────────
-function Lobby({ user, phase, onFind, onCancel }: {
+const Lobby = memo(function Lobby({ user, phase, onFind, onCancel }: {
   user: any; phase: GamePhase; onFind: () => void; onCancel: () => void;
 }) {
   return (
@@ -75,12 +76,12 @@ function Lobby({ user, phase, onFind, onCancel }: {
       )}
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────
-// Arena
+// Arena (memoized)
 // ─────────────────────────────────────────────
-function Arena({ matchData, currentUser, onFinish }: {
+const Arena = memo(function Arena({ matchData, currentUser, onFinish }: {
   matchData: MatchData; currentUser: any; onFinish: (score: number) => void;
 }) {
   const isPlayer1 = Number(currentUser?.id) === matchData.player1.id;
@@ -301,12 +302,12 @@ function Arena({ matchData, currentUser, onFinish }: {
       <p className="text-center text-xs text-slate-700">Room: {matchData.roomId}</p>
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────
-// ResultScreen
+// ResultScreen (memoized)
 // ─────────────────────────────────────────────
-function ResultScreen({ result, currentUser, onPlayAgain }: {
+const ResultScreen = memo(function ResultScreen({ result, currentUser, onPlayAgain }: {
   result: GameResult; currentUser: any; onPlayAgain: () => void;
 }) {
   const myId     = Number(currentUser?.id);
@@ -368,7 +369,7 @@ function ResultScreen({ result, currentUser, onPlayAgain }: {
       </button>
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────
 // GamePage  (entry point)

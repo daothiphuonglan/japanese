@@ -1,7 +1,11 @@
-// components/home/Hero.tsx
+'use client';
+
 import Container from "../layout/Container";
+import { useLearnedKana } from "@/context/LearnedKanaContext";
 
 export default function Hero() {
+  const { count } = useLearnedKana();
+
   return (
     <Container>
       <div className="grid md:grid-cols-2 gap-10 items-center py-16">
@@ -38,7 +42,7 @@ export default function Hero() {
 
           <div className="absolute top-10 left-0 bg-white shadow px-4 py-2 rounded-xl">
             <p className="text-xs text-gray-500">Đã học</p>
-            <p className="font-bold text-lg">56 chữ</p>
+            <p className="font-bold text-lg">{count} chữ</p>
           </div>
         </div>
       </div>

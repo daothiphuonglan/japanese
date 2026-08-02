@@ -33,14 +33,17 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
   const recognitionRef  = useRef<any>(null);
   const isStartedRef    = useRef(false);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable ref for the callback — avoids tearing down SpeechRecognition on every callback change
+  const onResultRef = useRef(onResult);
+  useEffect(() => { onResultRef.current = onResult; }, [onResult]);
 
   const [isListening,    setIsListening]    = useState(false);
   const [transcript,     setTranscript]     = useState('');
   const [supported,      setSupported]      = useState(true);
-  const [secondsLeft,    setSecondsLeft]    = useState(0);  // countdown display
+  const [secondsLeft,    setSecondsLeft]    = useState(0);
   const countdownRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const AUTO_STOP_MS = 5000; // 5 seconds
+  const AUTO_STOP_MS = 5000;
 
   // ── Clear timers helper ────────────────────
   const clearTimers = useCallback(() => {
@@ -49,6 +52,7 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
     setSecondsLeft(0);
   }, []);
 
+  // Initialize SpeechRecognition ONCE — no dependency on onResult
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -56,18 +60,16 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
 
     const rec = new SpeechRecognition();
     rec.lang            = 'ja-JP';
-    rec.continuous      = true;   // keep listening until we stop it
-    rec.interimResults  = true;   // get partial results → faster reaction
-    rec.maxAlternatives = 5;      // more candidates → pick best match
+    rec.continuous      = true;
+    rec.interimResults  = true;
+    rec.maxAlternatives = 5;
 
     rec.onstart = () => { setIsListening(true); };
 
     rec.onresult = (e: any) => {
-      // Collect the best final (non-interim) transcript from all results
       let finalText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          // Pick the alternative with the highest confidence
           let best = e.results[i][0];
           for (let j = 1; j < e.results[i].length; j++) {
             if (e.results[i][j].confidence > best.confidence) best = e.results[i][j];
@@ -77,7 +79,7 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
       }
       if (finalText.trim()) {
         setTranscript(finalText.trim());
-        onResult(finalText.trim());
+        onResultRef.current(finalText.trim()); // Use ref instead of closure
       }
     };
 
@@ -88,7 +90,6 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
     };
 
     rec.onerror = (e: any) => {
-      // 'no-speech' is expected when quiet; don't treat it as fatal
       if (e.error !== 'no-speech') console.error('SpeechRecognition error:', e.error);
       setIsListening(false);
       isStartedRef.current = false;
@@ -96,20 +97,18 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
     };
 
     recognitionRef.current = rec;
-  }, [onResult, clearTimers]);
+  }, [clearTimers]); // No onResult dependency — stable initialization
 
   // ── Toggle: click once → start; click again → stop early ──
   const toggleListening = useCallback(() => {
     if (!recognitionRef.current) return;
 
     if (isStartedRef.current) {
-      // User clicked again → stop immediately
       clearTimers();
       try { recognitionRef.current.stop(); } catch (_) {}
       return;
     }
 
-    // Start recording
     isStartedRef.current = true;
     setTranscript('');
     try {
@@ -121,7 +120,6 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
       return;
     }
 
-    // Countdown display (1 tick per second)
     setSecondsLeft(AUTO_STOP_MS / 1000);
     countdownRef.current = setInterval(() => {
       setSecondsLeft(s => {
@@ -130,7 +128,6 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
       });
     }, 1000);
 
-    // Auto-stop after 5 s
     autoStopTimerRef.current = setTimeout(() => {
       if (isStartedRef.current) {
         try { recognitionRef.current?.stop(); } catch (_) {}
@@ -147,6 +144,27 @@ export function useVoiceRecognition(onResult: (text: string) => void) {
 // useTTS  (Web Speech Synthesis)
 // ─────────────────────────────────────────────
 export function useTTS() {
+  // Cache the Japanese voice so we don't call getVoices() on every speak()
+  const jpVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const voicesLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      jpVoiceRef.current = voices.find(v => v.lang.startsWith('ja')) || null;
+      voicesLoadedRef.current = true;
+    };
+
+    loadVoices();
+    // Voices may load asynchronously in some browsers
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+    };
+  }, []);
+
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -154,9 +172,7 @@ export function useTTS() {
     utter.lang     = 'ja-JP';
     utter.rate     = 0.85;
     utter.pitch    = 1.1;
-    const voices   = window.speechSynthesis.getVoices();
-    const jpVoice  = voices.find(v => v.lang.startsWith('ja'));
-    if (jpVoice) utter.voice = jpVoice;
+    if (jpVoiceRef.current) utter.voice = jpVoiceRef.current;
     window.speechSynthesis.speak(utter);
   }, []);
 
@@ -183,7 +199,6 @@ export function useAudioRecorder() {
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         setAudioUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
-        // Stop all tracks so the mic indicator goes away
         stream.getTracks().forEach(t => t.stop());
       };
       mr.start();
@@ -235,6 +250,14 @@ export function useArena(matchData: MatchData, onFinish: (score: number) => void
   const inputRef    = useRef<HTMLInputElement>(null);
   const finishedRef = useRef(false);
 
+  // Refs for mutable values so processAnswer doesn't need them as deps
+  const scoreRef        = useRef(score);
+  const currentIndexRef = useRef(currentIndex);
+  const feedbackRef     = useRef(feedback);
+  useEffect(() => { scoreRef.current = score; }, [score]);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  useEffect(() => { feedbackRef.current = feedback; }, [feedback]);
+
   const triggerFinish = useCallback((finalScore: number) => {
     if (finishedRef.current) return;
     finishedRef.current = true;
@@ -259,15 +282,17 @@ export function useArena(matchData: MatchData, onFinish: (score: number) => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, inputMode]);
 
-  // Process answer
+  // Stabilized processAnswer — reads mutable values from refs
   const processAnswer = useCallback((answer: string) => {
-    if (feedback) return;
-    const word = words[currentIndex];
+    if (feedbackRef.current) return;
+    const idx = currentIndexRef.current;
+    const word = words[idx];
     const isCorrect =
       answer.trim().toLowerCase() === word.romaji.toLowerCase() ||
       answer.trim() === word.char;
 
-    const newScore = isCorrect ? score + 10 : score;
+    const currentScore = scoreRef.current;
+    const newScore = isCorrect ? currentScore + 10 : currentScore;
     setFeedback(isCorrect ? 'correct' : 'wrong');
     if (isCorrect) setScore(newScore);
 
@@ -275,13 +300,13 @@ export function useArena(matchData: MatchData, onFinish: (score: number) => void
     setTimeout(() => { speak(correctChar); setShownWord(correctChar); }, 200);
     setTimeout(() => {
       setFeedback(null); setTextInput(''); setVoiceHint(''); setShownWord(null);
-      if (currentIndex + 1 < words.length) {
+      if (idx + 1 < words.length) {
         setCurrentIndex(i => i + 1);
       } else {
         triggerFinish(newScore);
       }
     }, 1400);
-  }, [feedback, words, currentIndex, score, speak, triggerFinish]);
+  }, [words, speak, triggerFinish]); // Stable deps only
 
   // Voice recognition
   const handleVoiceResult = useCallback((text: string) => {
@@ -295,12 +320,12 @@ export function useArena(matchData: MatchData, onFinish: (score: number) => void
   // Wrap toggleListening to also start/stop MediaRecorder
   const handleToggleListening = useCallback(() => {
     if (!isListening) {
-      clearAudio();       // clear previous recording before starting new one
-      startCapture();     // start MediaRecorder
+      clearAudio();
+      startCapture();
     } else {
-      stopCapture();      // stop MediaRecorder (triggers onstop → audioUrl)
+      stopCapture();
     }
-    toggleListening();    // start/stop SpeechRecognition
+    toggleListening();
   }, [isListening, clearAudio, startCapture, stopCapture, toggleListening]);
 
   // Clear audio when moving to next word
