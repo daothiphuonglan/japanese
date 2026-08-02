@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { useEffect, useState, useCallback, memo, useRef } from "react";
 import { useLearnedKana } from "@/context/LearnedKanaContext";
+import { useHiragana, useKatakana } from "@/hooks/useKana";
 
 // ─── Memoized grid item to prevent re-renders when dialog state changes ───
 const KanaGridItem = memo(function KanaGridItem({
@@ -151,13 +152,34 @@ function useSpeechCheck(targetChar: string | undefined) {
   return { recordState, startRecording };
 }
 
+// ─── Loading skeleton for kana grid ───
+function KanaGridSkeleton() {
+  return (
+    <div className="grid grid-cols-5 gap-4">
+      {Array.from({ length: 46 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl bg-gray-200 animate-pulse h-16"
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function KanaSection() {
-  const [hiraganaData, setHiraganaData] = useState<any[]>([]);
-  const [katakanaData, setKatakanaData] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  // isMounted = false khi SSR — tránh hydration mismatch
+  // skeleton chỉ hiện sau khi mount trên client
+  const [isMounted, setIsMounted] = useState(false);
+
+  // ✅ TanStack Query — có cache, loading, error tự động
+  const { data: hiraganaData, isLoading: loadingHiragana, isError: errorHiragana } = useHiragana();
+  const { data: katakanaData, isLoading: loadingKatakana, isError: errorKatakana } = useKatakana();
 
   const { learnedIds, markAsLearned } = useLearnedKana();
   const { recordState, startRecording } = useSpeechCheck(selectedItem?.char);
+
+  useEffect(() => { setIsMounted(true); }, []);
 
   // Đánh dấu đã học khi đọc đúng
   useEffect(() => {
@@ -165,34 +187,6 @@ export default function KanaSection() {
       markAsLearned(String(selectedItem.id));
     }
   }, [recordState, selectedItem, markAsLearned]);
-
-  // Lấy dữ liệu chữ cái Hiragana từ API
-  useEffect(() => {
-    async function fetchHiragana() {
-      try {
-        const res = await fetch("http://localhost:3000/kana/hiragana");
-        const json = await res.json();
-        setHiraganaData(json.data);
-      } catch (error) {
-        console.error("Lỗi lấy dữ liệu chữ Hiragana:", error);
-      }
-    }
-    fetchHiragana();
-  }, []);
-
-  // Lấy dữ liệu chữ cái Katakana từ API
-  useEffect(() => {
-    async function fetchKatakana() {
-      try {
-        const res = await fetch("http://localhost:3000/kana/katakana");
-        const json = await res.json();
-        setKatakanaData(json.data);
-      } catch (error) {
-        console.error("Lỗi lấy dữ liệu chữ Katakana:", error);
-      }
-    }
-    fetchKatakana();
-  }, []);
 
   // Phát âm bằng Web Speech API
   const playSound = useCallback((character: string) => {
@@ -233,8 +227,13 @@ export default function KanaSection() {
         <section id="hiragana" className="py-16">
           <h2 className="text-2xl font-bold mb-6">Bảng chữ cái Hiragana</h2>
 
+          {/* Skeleton chỉ hiện sau mount (client-only) để tránh hydration mismatch */}
+          {isMounted && loadingHiragana && <KanaGridSkeleton />}
+          {isMounted && errorHiragana && (
+            <p className="text-red-500">Không thể tải dữ liệu Hiragana. Vui lòng thử lại.</p>
+          )}
           <div className="grid grid-cols-5 gap-4">
-            {hiraganaData?.map((item: any) => (
+            {hiraganaData?.map((item) => (
               <KanaGridItem
                 key={item.id}
                 item={item}
@@ -251,8 +250,12 @@ export default function KanaSection() {
         <section id="katakana" className="py-16">
           <h2 className="text-2xl font-bold mb-6">Bảng chữ cái Katakana</h2>
 
+          {isMounted && loadingKatakana && <KanaGridSkeleton />}
+          {isMounted && errorKatakana && (
+            <p className="text-red-500">Không thể tải dữ liệu Katakana. Vui lòng thử lại.</p>
+          )}
           <div className="grid grid-cols-5 gap-4">
-            {katakanaData?.map((item: any) => (
+            {katakanaData?.map((item) => (
               <KanaGridItem
                 key={item.id}
                 item={item}
