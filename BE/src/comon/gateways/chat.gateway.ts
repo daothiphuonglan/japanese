@@ -14,7 +14,7 @@ import { Socket, Server } from 'socket.io';
 import { PrismaService } from '../../database/prisma.service';
 
 @WebSocketGateway({
-  cors: { origin: 'http://localhost:3001', credentials: true },
+  cors: { origin: [process.env.FRONTEND_URL || 'http://localhost:3001'], credentials: true },
 })
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
