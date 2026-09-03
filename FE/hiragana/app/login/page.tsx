@@ -15,7 +15,9 @@ export default function LoginPage() {
     try {
       const res = await api.post('/auth/login', formData);
       
-      loginContext(res.data.user, res.data.accessToken);
+      // BE đã set accessToken vào HttpOnly cookie
+      // FE chỉ nhận user info
+      loginContext(res.data.user);
 
       alert('Đăng nhập thành công!');
       
