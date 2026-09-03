@@ -12,7 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { MatchmakingService } from './matchmaking.service';
 
 @WebSocketGateway({
-  cors: { origin: 'http://localhost:3001', credentials: true },
+  cors: { origin: [process.env.FRONTEND_URL || 'http://localhost:3001'], credentials: true },
 })
 export class MatchmakingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

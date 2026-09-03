@@ -3,6 +3,9 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { SocketProvider } from '@/context/SocketContext';
+import { ReactQueryProvider } from '@/lib/ReactQueryProvider';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -20,9 +23,14 @@ export default function RootLayout({
   return (
     <html lang="vi" className={cn("font-sans", geist.variable)}>
       <body className="bg-gray-50 text-gray-900">
-        <SocketProvider>
-          {children}
-        </SocketProvider>
+        <ErrorBoundary>
+          <ReactQueryProvider>
+            <OfflineBanner />
+            <SocketProvider>
+              {children}
+            </SocketProvider>
+          </ReactQueryProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

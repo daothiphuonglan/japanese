@@ -9,4 +9,14 @@ export class KanaController {
   getAllKana() {
     return this.kanaService.findAll();
   }
+
+  @Get('hiragana')
+  getHiragana() {
+    return this.kanaService.findByType('hiragana');
+  }
+
+  @Get('katakana')
+  getKatakana() {
+    return this.kanaService.findByType('katakana');
+  }
 }
